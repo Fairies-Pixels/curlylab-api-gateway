@@ -2,9 +2,7 @@ package com.curlylab.curlylabApiGateway
 
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.http.ResponseEntity
-import org.springframework.web.bind.annotation.GetMapping
-import org.springframework.web.bind.annotation.PathVariable
-import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.bind.annotation.*
 import org.springframework.web.reactive.function.client.WebClient
 import reactor.core.publisher.Mono
 import java.util.*
@@ -32,4 +30,46 @@ class ApiGatewayController (
             .toEntity(Any::class.java)
     }
 
+    // Users
+
+    @GetMapping("/users/{id}")
+    fun getUser(@PathVariable id: UUID): Mono<ResponseEntity<Any>> {
+        return webClient.get()
+            .uri("$backendURI/users/$id")
+            .retrieve()
+            .toEntity(Any::class.java)
+    }
+
+    @PostMapping("/users")
+    fun createUser(@RequestBody user: Map<String, Any>): Mono<ResponseEntity<String>> {
+        return webClient.post()
+            .uri("$backendURI/users")
+            .bodyValue(user)
+            .retrieve()
+            .bodyToMono(String::class.java)
+            .map {responseBody -> ResponseEntity.ok(responseBody)}
+    }
+
+    @PutMapping("/users/{id}")
+    fun updateUser(@PathVariable id: UUID, @RequestBody user: Map<String, Any>): Mono<ResponseEntity<Any>> {
+        return webClient.put()
+            .uri("$backendURI/users/$id")
+            .bodyValue(user)
+            .retrieve()
+            .toEntity(Any::class.java)
+            .onErrorResume { error ->
+                Mono.just(ResponseEntity.status(500).body(mapOf(
+                    "error" to "Failed to update user (id=$id): ${error.message}"
+                )))
+            }
+    }
+
+    @DeleteMapping("/users/{id}")
+    fun deleteUser(@PathVariable id: UUID): Mono<ResponseEntity<String>> {
+        return webClient.delete()
+            .uri("$backendURI/users/$id")
+            .retrieve()
+            .bodyToMono(String::class.java)
+            .map { responseBody -> ResponseEntity.ok(responseBody)}
+    }
 }
