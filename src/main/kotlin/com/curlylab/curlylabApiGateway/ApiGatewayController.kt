@@ -145,4 +145,40 @@ class ApiGatewayController (
             .bodyToMono(String::class.java)
             .map { responseBody -> ResponseEntity.ok(responseBody)}
     }
+
+    // Favourites
+    @GetMapping("/users/{user_id}/favourites")
+    fun getUserFavourites(@PathVariable user_id: UUID): Mono<ResponseEntity<Any>> {
+        return webClient.get()
+            .uri("$backendURI/users/$user_id/favourites")
+            .retrieve()
+            .toEntity(Any::class.java)
+    }
+
+    @GetMapping("/products/{product_id}/is_favourite/{user_id}")
+    fun getProductUsers(@PathVariable user_id: UUID, @PathVariable product_id: UUID): Mono<ResponseEntity<Boolean>> {
+        return webClient.get()
+            .uri("$backendURI/products/$product_id/is_favourite/$user_id")
+            .retrieve()
+            .toEntity(Boolean::class.java)
+    }
+
+    @PostMapping("/users/{user_id}/favourites")
+    fun addToFavourites(@PathVariable user_id: UUID, @RequestBody favourite: Map<String, Any>): Mono<ResponseEntity<String>> {
+        return webClient.post()
+            .uri("$backendURI/users/$user_id/favourites")
+            .bodyValue(favourite)
+            .retrieve()
+            .bodyToMono(String::class.java)
+            .map { responseBody -> ResponseEntity.ok(responseBody) }
+    }
+
+    @DeleteMapping("/users/{user_id}/favourites/{product_id}")
+    fun deleteFavourite(@PathVariable user_id: UUID, @PathVariable product_id: UUID): Mono<ResponseEntity<String>> {
+        return webClient.delete()
+            .uri("$backendURI/users/$user_id/favourites/$product_id")
+            .retrieve()
+            .bodyToMono(String::class.java)
+            .map { responseBody -> ResponseEntity.ok(responseBody)}
+    }
 }
