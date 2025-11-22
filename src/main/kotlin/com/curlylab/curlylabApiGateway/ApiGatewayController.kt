@@ -31,7 +31,6 @@ class ApiGatewayController (
     }
 
     // Users
-
     @GetMapping("/users/{id}")
     fun getUser(@PathVariable id: UUID): Mono<ResponseEntity<Any>> {
         return webClient.get()
@@ -68,6 +67,43 @@ class ApiGatewayController (
     fun deleteUser(@PathVariable id: UUID): Mono<ResponseEntity<String>> {
         return webClient.delete()
             .uri("$backendURI/users/$id")
+            .retrieve()
+            .bodyToMono(String::class.java)
+            .map { responseBody -> ResponseEntity.ok(responseBody)}
+    }
+
+    // HairTypes
+    @GetMapping("/haritypes/{userId}")
+    fun getHairType(@PathVariable userId: UUID): Mono<ResponseEntity<Any>> {
+        return webClient.get()
+            .uri("$backendURI/hairtypes/$userId")
+            .retrieve()
+            .toEntity(Any::class.java)
+    }
+
+    @PostMapping("/hairtypes")
+    fun createHairType(@RequestBody hairType: Map<String, Any>): Mono<ResponseEntity<String>> {
+        return webClient.post()
+            .uri("$backendURI/hairtypes")
+            .bodyValue(hairType)
+            .retrieve()
+            .bodyToMono(String::class.java)
+            .map {responseBody -> ResponseEntity.ok(responseBody)}
+    }
+
+    @PutMapping("/hairtypes/{userId}")
+    fun updateHairType(@PathVariable userId: UUID, @RequestBody hairType: Map<String, Any>): Mono<ResponseEntity<Any>> {
+        return webClient.put()
+            .uri("$backendURI/hairtypes/$userId")
+            .bodyValue(hairType)
+            .retrieve()
+            .toEntity(Any::class.java)
+    }
+
+    @DeleteMapping("/hairtypes/{userId}")
+    fun deleteHairType(@PathVariable userId: UUID): Mono<ResponseEntity<Any>> {
+        return webClient.delete()
+            .uri("$backendURI/hairtypes/$userId")
             .retrieve()
             .bodyToMono(String::class.java)
             .map { responseBody -> ResponseEntity.ok(responseBody)}
