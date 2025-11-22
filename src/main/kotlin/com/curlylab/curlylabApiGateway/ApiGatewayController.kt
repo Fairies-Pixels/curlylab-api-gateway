@@ -108,4 +108,41 @@ class ApiGatewayController (
             .bodyToMono(String::class.java)
             .map { responseBody -> ResponseEntity.ok(responseBody)}
     }
+
+    // Reviews
+    @GetMapping("/products/{product_id}/reviews")
+    fun getAllReviews(@PathVariable product_id: UUID): Mono<ResponseEntity<Any>> {
+        return webClient.get()
+            .uri("$backendURI/products/$product_id/reviews")
+            .retrieve()
+            .toEntity(Any::class.java)
+    }
+
+    @PostMapping("/products/{product_id}/reviews")
+    fun createReview(@PathVariable product_id: UUID, @RequestBody review: Map<String, Any>): Mono<ResponseEntity<String>> {
+        return webClient.post()
+            .uri("$backendURI/products/$product_id/reviews")
+            .bodyValue(review)
+            .retrieve()
+            .bodyToMono(String::class.java)
+            .map {responseBody -> ResponseEntity.ok(responseBody)}
+    }
+
+    @PutMapping("/products/{product_id}/reviews/{review_id}")
+    fun updateReview(@PathVariable product_id: UUID, @PathVariable review_id: UUID, @RequestBody review: Map<String, Any>): Mono<ResponseEntity<Any>> {
+        return webClient.put()
+            .uri("$backendURI/products/$product_id/reviews/$review_id")
+            .bodyValue(review)
+            .retrieve()
+            .toEntity(Any::class.java)
+    }
+
+    @DeleteMapping("/products/{product_id}/reviews/{review_id}")
+    fun deleteReview(@PathVariable product_id: UUID, @PathVariable review_id: UUID): Mono<ResponseEntity<String>> {
+        return webClient.delete()
+            .uri("$backendURI/products/$product_id/reviews/$review_id")
+            .retrieve()
+            .bodyToMono(String::class.java)
+            .map { responseBody -> ResponseEntity.ok(responseBody)}
+    }
 }
