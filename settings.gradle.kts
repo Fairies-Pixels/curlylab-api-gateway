@@ -1,1 +1,1 @@
-rootProject.name = "curlylab"
+rootProject.name = "curlylab_api_gateway"
