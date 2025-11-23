@@ -1,15 +1,21 @@
 package com.curlylab.curlylabApiGateway
 
+import com.fasterxml.jackson.databind.ObjectMapper
+import org.springframework.amqp.rabbit.core.RabbitTemplate
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.core.io.buffer.DataBufferUtils
 import org.springframework.http.ResponseEntity
+import org.springframework.http.codec.multipart.FilePart
 import org.springframework.web.bind.annotation.*
 import org.springframework.web.reactive.function.client.WebClient
+import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
 import java.util.*
 
 @RestController
 class ApiGatewayController (
     @Autowired
+    val rabbitTemplate: RabbitTemplate,
     val webClient: WebClient,
     val backendURI: String = "http://localhost:8081"
 ) {
@@ -180,5 +186,77 @@ class ApiGatewayController (
             .retrieve()
             .bodyToMono(String::class.java)
             .map { responseBody -> ResponseEntity.ok(responseBody)}
+    }
+
+    // Consistence AI
+    @PostMapping("/analyze")
+    fun analyzeConsistenceOfProduct(@RequestPart("file") file: FilePart): Mono<ResponseEntity<Map<String, String>>> {
+        return file.content()
+            .collectList()
+            .flatMap { dataBuffers ->
+                try {
+                    val bytes = DataBufferUtils.join(Flux.fromIterable(dataBuffers))
+                        .map { dataBuffer ->
+                            val bytes = ByteArray(dataBuffer.readableByteCount())
+                            dataBuffer.read(bytes)
+                            DataBufferUtils.release(dataBuffer)
+                            bytes
+                        }
+                    bytes.flatMap { imageBytes ->
+                        // Проверяем тип файла
+                        file.headers().contentType?.toString()?.startsWith("image/")?.let {
+                            if (!it == true) {
+                                return@flatMap Mono.just(
+                                    ResponseEntity.badRequest().body(mapOf("error" to "File must be an image"))
+                                )
+                            }
+                        }
+
+                        val base64Image = Base64.getEncoder().encodeToString(imageBytes)
+                        val request = HairTypeRequest(file = base64Image)
+
+                        rabbitTemplate.convertAndSend(
+                            "consistence.exchange",
+                            "consistence.request.bind",
+                            request
+                        )
+
+                        Mono.just(
+                            ResponseEntity.accepted().body(
+                                mapOf(
+                                    "message" to "Product's consistence analysis request submitted"
+                                )
+                            )
+                        )
+                    }
+                } catch (e: Exception) {
+                    Mono.just(
+                        ResponseEntity.status(500).body(mapOf("error" to "Failed to process image: ${e.message}"))
+                    )
+                }
+            }
+
+    }
+
+    @GetMapping("/analyze/result")
+    fun getAnalysisResult(): ResponseEntity<Any> {
+        return try {
+            val message = rabbitTemplate.receive("consistence.responses")
+
+            if (message != null) {
+                val response = rabbitTemplate.messageConverter.fromMessage(message) as? Map<*,*>
+                ResponseEntity.ok(mapOf(
+                    "status" to "completed",
+                    "result" to response
+                ))
+            } else {
+                ResponseEntity.status(202).body(mapOf(
+                    "status" to "processing",
+                    "message" to "Analysis still in progress"
+                ))
+            }
+        } catch (e: Exception) {
+            ResponseEntity.status(500).body(mapOf("error" to "Failed to get result: ${e.message}"))
+        }
     }
 }
