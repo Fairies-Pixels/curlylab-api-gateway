@@ -221,7 +221,7 @@ class ApiGatewayController (
                             request
                         )
 
-                        rabbitMqPulling()
+                        rabbitMqPolling()
                     }
                 } catch (e: Exception) {
                     Mono.just(
@@ -232,7 +232,7 @@ class ApiGatewayController (
 
     }
 
-    private fun rabbitMqPulling(): Mono<ResponseEntity<Map<String, Any>>> {
+    private fun rabbitMqPolling(): Mono<ResponseEntity<Map<String, Any>>> {
         return Flux.interval(Duration.ofMillis(500))
             .take(10)
             .flatMap { attempt ->
@@ -255,7 +255,7 @@ class ApiGatewayController (
                     )
                 } else {
                     Mono.delay(Duration.ofMillis(500))
-                        .then(rabbitMqPulling())
+                        .then(rabbitMqPolling())
                 }
             }
             .timeout(Duration.ofSeconds(5))
