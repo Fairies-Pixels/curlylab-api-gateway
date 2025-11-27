@@ -232,28 +232,6 @@ class ApiGatewayController (
 
     }
 
-    @GetMapping("/composition/analyze")
-    fun getResponseConsistenceOfProduct(): ResponseEntity<Any> {
-        return try {
-            val message = rabbitTemplate.receive("consistence.responses")
-
-            if (message != null) {
-                val response = rabbitTemplate.messageConverter.fromMessage(message) as? Map<*,*>
-                ResponseEntity.ok(mapOf(
-                    "status" to "completed",
-                    "result" to response
-                ))
-            } else {
-                ResponseEntity.status(202).body(mapOf(
-                    "status" to "processing",
-                    "message" to "Analysis still in progress"
-                ))
-            }
-        } catch (e: Exception) {
-            ResponseEntity.status(500).body(mapOf("error" to "Failed to get result: ${e.message}"))
-        }
-    }
-
     private fun rabbitMqPulling(): Mono<ResponseEntity<Map<String, Any>>> {
         return Flux.interval(Duration.ofMillis(500))
             .take(10)
