@@ -181,4 +181,36 @@ class ApiGatewayController (
             .bodyToMono(String::class.java)
             .map { responseBody -> ResponseEntity.ok(responseBody)}
     }
+
+    // Auth
+    @PostMapping("/auth/register")
+    fun register(@RequestBody registerRequest: Map<String, Any>): Mono<ResponseEntity<String>> {
+        return webClient.post()
+            .uri("$backendURI/auth/register")
+            .bodyValue(registerRequest)
+            .retrieve()
+            .bodyToMono(String::class.java)
+            .map { responseBody -> ResponseEntity.ok(responseBody) }
+    }
+
+    @PostMapping("/auth/login")
+    fun login(@RequestBody loginRequest: Map<String, Any>): Mono<ResponseEntity<String>> {
+        return webClient.post()
+            .uri("$backendURI/auth/login")
+            .bodyValue(loginRequest)
+            .retrieve()
+            .bodyToMono(String::class.java)
+            .map { responseBody -> ResponseEntity.ok(responseBody) }
+    }
+
+    @PostMapping("/auth/google")
+    fun google(@RequestBody googleRequest: Map<String, Any>): Mono<ResponseEntity<String>> {
+        return webClient.post()
+            .uri("$backendURI/auth/google")
+            .bodyValue(googleRequest)
+            .retrieve()
+            .bodyToMono(String::class.java)
+            .map { responseBody -> ResponseEntity.ok(responseBody) }
+    }
+
 }
