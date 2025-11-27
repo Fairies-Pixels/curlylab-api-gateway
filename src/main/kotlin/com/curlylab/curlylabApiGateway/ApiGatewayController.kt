@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.*
 import org.springframework.web.reactive.function.client.WebClient
 import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
+import java.time.Duration
 import java.util.*
 
 @RestController
@@ -189,8 +190,8 @@ class ApiGatewayController (
     }
 
     // Consistence AI
-    @PostMapping("/analyze")
-    fun analyzeConsistenceOfProduct(@RequestPart("file") file: FilePart): Mono<ResponseEntity<Map<String, String>>> {
+    @PostMapping("/composition/analyze")
+    fun analyzeConsistenceOfProduct(@RequestPart("file") file: FilePart): Mono<ResponseEntity<Map<String, Any>>> {
         return file.content()
             .collectList()
             .flatMap { dataBuffers ->
@@ -203,7 +204,6 @@ class ApiGatewayController (
                             bytes
                         }
                     bytes.flatMap { imageBytes ->
-                        // Проверяем тип файла
                         file.headers().contentType?.toString()?.startsWith("image/")?.let {
                             if (!it == true) {
                                 return@flatMap Mono.just(
@@ -221,13 +221,7 @@ class ApiGatewayController (
                             request
                         )
 
-                        Mono.just(
-                            ResponseEntity.accepted().body(
-                                mapOf(
-                                    "message" to "Product's consistence analysis request submitted"
-                                )
-                            )
-                        )
+                        rabbitMqPulling()
                     }
                 } catch (e: Exception) {
                     Mono.just(
@@ -238,8 +232,8 @@ class ApiGatewayController (
 
     }
 
-    @GetMapping("/analyze/result")
-    fun getAnalysisResult(): ResponseEntity<Any> {
+    @GetMapping("/composition/analyze")
+    fun getResponseConsistenceOfProduct(): ResponseEntity<Any> {
         return try {
             val message = rabbitTemplate.receive("consistence.responses")
 
@@ -258,5 +252,42 @@ class ApiGatewayController (
         } catch (e: Exception) {
             ResponseEntity.status(500).body(mapOf("error" to "Failed to get result: ${e.message}"))
         }
+    }
+
+    private fun rabbitMqPulling(): Mono<ResponseEntity<Map<String, Any>>> {
+        return Flux.interval(Duration.ofMillis(500))
+            .take(10)
+            .flatMap { attempt ->
+                Mono.fromCallable {
+                    rabbitTemplate.receive("consistence.responses")
+                }.map { message ->
+                    message to attempt
+                }
+            }
+            .takeUntil { (message, _) -> message != null }
+            .last()
+            .flatMap { (message, attempt) ->
+                if (message != null) {
+                    val response = rabbitTemplate.messageConverter.fromMessage(message) as? Map<*, *>
+                    Mono.just(
+                        ResponseEntity.ok(mapOf(
+                            "status" to "completed",
+                            "result" to response
+                        ) as Map<String, Any>)
+                    )
+                } else {
+                    Mono.delay(Duration.ofMillis(500))
+                        .then(rabbitMqPulling())
+                }
+            }
+            .timeout(Duration.ofSeconds(5))
+            .onErrorResume { timeoutException ->
+                Mono.just(
+                    ResponseEntity.accepted().body(mapOf(
+                        "status" to timeoutException,
+                        "message" to "Analysis takes too much time"
+                    ))
+                )
+            }
     }
 }
