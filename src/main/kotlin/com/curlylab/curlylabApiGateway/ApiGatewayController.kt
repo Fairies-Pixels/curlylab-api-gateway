@@ -1,15 +1,22 @@
 package com.curlylab.curlylabApiGateway
 
+import com.fasterxml.jackson.databind.ObjectMapper
+import org.springframework.amqp.rabbit.core.RabbitTemplate
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.core.io.buffer.DataBufferUtils
 import org.springframework.http.ResponseEntity
+import org.springframework.http.codec.multipart.FilePart
 import org.springframework.web.bind.annotation.*
 import org.springframework.web.reactive.function.client.WebClient
+import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
+import java.time.Duration
 import java.util.*
 
 @RestController
 class ApiGatewayController (
     @Autowired
+    val rabbitTemplate: RabbitTemplate,
     val webClient: WebClient,
     val backendURI: String = "http://localhost:8081"
 ) {
@@ -182,7 +189,7 @@ class ApiGatewayController (
             .map { responseBody -> ResponseEntity.ok(responseBody)}
     }
 
-    // Auth
+        // Auth
     @PostMapping("/auth/register")
     fun register(@RequestBody registerRequest: Map<String, Any>): Mono<ResponseEntity<String>> {
         return webClient.post()
@@ -212,5 +219,84 @@ class ApiGatewayController (
             .bodyToMono(String::class.java)
             .map { responseBody -> ResponseEntity.ok(responseBody) }
     }
+    
+    // Consistence AI
+    @PostMapping("/composition/analyze")
+    fun analyzeConsistenceOfProduct(@RequestPart("file") file: FilePart): Mono<ResponseEntity<Map<String, Any>>> {
+        return file.content()
+            .collectList()
+            .flatMap { dataBuffers ->
+                try {
+                    val bytes = DataBufferUtils.join(Flux.fromIterable(dataBuffers))
+                        .map { dataBuffer ->
+                            val bytes = ByteArray(dataBuffer.readableByteCount())
+                            dataBuffer.read(bytes)
+                            DataBufferUtils.release(dataBuffer)
+                            bytes
+                        }
+                    bytes.flatMap { imageBytes ->
+                        file.headers().contentType?.toString()?.startsWith("image/")?.let {
+                            if (!it == true) {
+                                return@flatMap Mono.just(
+                                    ResponseEntity.badRequest().body(mapOf("error" to "File must be an image"))
+                                )
+                            }
+                        }
 
+                        val base64Image = Base64.getEncoder().encodeToString(imageBytes)
+                        val request = HairTypeRequest(file = base64Image)
+
+                        rabbitTemplate.convertAndSend(
+                            "consistence.exchange",
+                            "consistence.request.bind",
+                            request
+                        )
+
+                        rabbitMqPolling()
+                    }
+                } catch (e: Exception) {
+                    Mono.just(
+                        ResponseEntity.status(500).body(mapOf("error" to "Failed to process image: ${e.message}"))
+                    )
+                }
+            }
+
+    }
+
+    private fun rabbitMqPolling(): Mono<ResponseEntity<Map<String, Any>>> {
+        return Flux.interval(Duration.ofMillis(500))
+            .take(10)
+            .flatMap { attempt ->
+                Mono.fromCallable {
+                    rabbitTemplate.receive("consistence.responses")
+                }.map { message ->
+                    message to attempt
+                }
+            }
+            .takeUntil { (message, _) -> message != null }
+            .last()
+            .flatMap { (message, attempt) ->
+                if (message != null) {
+                    val response = rabbitTemplate.messageConverter.fromMessage(message) as? Map<*, *>
+                    Mono.just(
+                        ResponseEntity.ok(mapOf(
+                            "status" to "completed",
+                            "result" to response
+                        ) as Map<String, Any>)
+                    )
+                } else {
+                    Mono.delay(Duration.ofMillis(500))
+                        .then(rabbitMqPolling())
+                }
+            }
+            .timeout(Duration.ofSeconds(5))
+            .onErrorResume { timeoutException ->
+                Mono.just(
+                    ResponseEntity.accepted().body(mapOf(
+                        "status" to timeoutException,
+                        "message" to "Analysis takes too much time"
+                    ))
+                )
+            }
+    }
 }
