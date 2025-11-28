@@ -70,7 +70,6 @@ class RabbitConfig {
             .with("consistence.response.bind")
     }
 
-    // RabbitTemplate с JSON конвертером
     @Bean
     fun rabbitTemplate(connectionFactory: ConnectionFactory): RabbitTemplate {
         val template = RabbitTemplate(connectionFactory)
