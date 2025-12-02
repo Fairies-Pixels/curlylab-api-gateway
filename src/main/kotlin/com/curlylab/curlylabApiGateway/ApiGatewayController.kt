@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import org.springframework.amqp.rabbit.core.RabbitTemplate
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.core.io.buffer.DataBufferUtils
+import org.springframework.http.HttpStatus
+import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.http.codec.multipart.FilePart
 import org.springframework.web.bind.annotation.*
@@ -189,15 +191,26 @@ class ApiGatewayController (
             .map { responseBody -> ResponseEntity.ok(responseBody)}
     }
 
-        // Auth
+    // Auth
     @PostMapping("/auth/register")
     fun register(@RequestBody registerRequest: Map<String, Any>): Mono<ResponseEntity<String>> {
         return webClient.post()
             .uri("$backendURI/auth/register")
             .bodyValue(registerRequest)
-            .retrieve()
-            .bodyToMono(String::class.java)
-            .map { responseBody -> ResponseEntity.ok(responseBody) }
+            .exchangeToMono { response ->
+                response.bodyToMono(String::class.java)
+                    .defaultIfEmpty("")
+                    .map { body ->
+                        ResponseEntity.status(response.statusCode())
+                            .headers {
+                                it.addAll(response.headers().asHttpHeaders())
+                                if (response.headers().contentType() == null && body.isNotBlank()) {
+                                    it.contentType = MediaType.APPLICATION_JSON
+                                }
+                            }
+                            .body(body)
+                    }
+            }
     }
 
     @PostMapping("/auth/login")
@@ -205,19 +218,42 @@ class ApiGatewayController (
         return webClient.post()
             .uri("$backendURI/auth/login")
             .bodyValue(loginRequest)
-            .retrieve()
-            .bodyToMono(String::class.java)
-            .map { responseBody -> ResponseEntity.ok(responseBody) }
+            .exchangeToMono { response ->
+                response.bodyToMono(String::class.java)
+                    .defaultIfEmpty("")
+                    .map { body ->
+                        ResponseEntity.status(response.statusCode())
+                            .headers {
+                                it.addAll(response.headers().asHttpHeaders())
+                                if (response.headers().contentType() == null && body.isNotBlank()) {
+                                    it.contentType = MediaType.APPLICATION_JSON
+                                }
+                            }
+                            .body(body)
+                    }
+            }
     }
 
     @PostMapping("/auth/google")
     fun google(@RequestBody googleRequest: Map<String, Any>): Mono<ResponseEntity<String>> {
+        println("google")
         return webClient.post()
             .uri("$backendURI/auth/google")
             .bodyValue(googleRequest)
-            .retrieve()
-            .bodyToMono(String::class.java)
-            .map { responseBody -> ResponseEntity.ok(responseBody) }
+            .exchangeToMono { response ->
+                response.bodyToMono(String::class.java)
+                    .defaultIfEmpty("")
+                    .map { body ->
+                        ResponseEntity.status(response.statusCode())
+                            .headers {
+                                it.addAll(response.headers().asHttpHeaders())
+                                if (response.headers().contentType() == null && body.isNotBlank()) {
+                                    it.contentType = MediaType.APPLICATION_JSON
+                                }
+                            }
+                            .body(body)
+                    }
+            }
     }
     
     // Consistence AI
@@ -299,4 +335,4 @@ class ApiGatewayController (
                 )
             }
     }
-}
+    }
