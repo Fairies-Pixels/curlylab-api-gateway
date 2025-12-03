@@ -80,7 +80,7 @@ class ApiGatewayController (
     }
 
     // HairTypes
-    @GetMapping("/haritypes/{userId}")
+    @GetMapping("/hairtypes/{userId}")
     fun getHairType(@PathVariable userId: UUID): Mono<ResponseEntity<Any>> {
         return webClient.get()
             .uri("$backendURI/hairtypes/$userId")
