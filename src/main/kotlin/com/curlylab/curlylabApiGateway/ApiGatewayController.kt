@@ -1,9 +1,13 @@
 package com.curlylab.curlylabApiGateway
 
-import com.fasterxml.jackson.databind.ObjectMapper
 import org.springframework.amqp.rabbit.core.RabbitTemplate
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.core.io.buffer.DataBufferUtils
+import org.springframework.http.HttpEntity
+import org.springframework.http.HttpHeaders
+import org.springframework.http.HttpStatus
+import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.http.codec.multipart.FilePart
 import org.springframework.web.bind.annotation.*
@@ -13,12 +17,22 @@ import reactor.core.publisher.Mono
 import java.time.Duration
 import java.util.*
 
+@ControllerAdvice
+class GlobalExceptionHandler {
+
+    @ExceptionHandler(RuntimeException::class)
+    fun handleBackendErrors(ex: RuntimeException): ResponseEntity<Map<String, String>> {
+        return ResponseEntity.badRequest().body(mapOf("error" to (ex.message ?: "Unknown backend error")))
+    }
+}
+
 @RestController
 class ApiGatewayController (
     @Autowired
     val rabbitTemplate: RabbitTemplate,
     val webClient: WebClient,
-    val backendURI: String = "http://localhost:8081"
+    @Value("\${backend.uri:http://curlylab-backend-service:8080}")
+    private val backendURI: String
 ) {
     // Products
     @GetMapping("/products")
@@ -79,8 +93,53 @@ class ApiGatewayController (
             .map { responseBody -> ResponseEntity.ok(responseBody)}
     }
 
+    @PostMapping(value = ["/users/{id}/upload_image"], consumes = [MediaType.ALL_VALUE])
+    fun uploadUserAvatar(@PathVariable id: UUID, @RequestPart("file") avatar: FilePart): Mono<ResponseEntity<String>> {
+        println("upload_image")
+        return DataBufferUtils.join(avatar.content())
+            .flatMap { dataBuffer ->
+                val bytes = ByteArray(dataBuffer.readableByteCount())
+                dataBuffer.read(bytes)
+
+                val boundary = "----WebKitFormBoundary" + System.currentTimeMillis()
+
+                val body = StringBuilder()
+                    .append("--").append(boundary).append("\r\n")
+                    .append("Content-Disposition: form-data; name=\"file\"; filename=\"")
+                    .append(avatar.filename()).append("\"\r\n")
+                    .append("Content-Type: ")
+                    .append(avatar.headers().contentType?.toString() ?: "image/png")
+                    .append("\r\n\r\n")
+                    .toString().toByteArray() + bytes +
+                        "\r\n--${boundary}--\r\n".toByteArray()
+
+                val headers = HttpHeaders().apply {
+                    contentType = MediaType.parseMediaType("multipart/form-data; boundary=$boundary")
+                }
+
+                val entity = HttpEntity(body, headers)
+
+                webClient.post()
+                    .uri("$backendURI/users/$id/upload_image")
+                    .header(HttpHeaders.CONTENT_TYPE, "multipart/form-data; boundary=$boundary")
+                    .bodyValue(body)
+                    .retrieve()
+                    .bodyToMono(String::class.java)
+                    .map { ResponseEntity.ok(it) }
+            }
+    }
+
+    @DeleteMapping("/users/{id}/avatar")
+    fun deleteUserAvatar(@PathVariable id: UUID): Mono<ResponseEntity<String>> {
+        return webClient.delete()
+            .uri("$backendURI/users/$id/avatar")
+            .retrieve()
+            .bodyToMono(String::class.java)
+            .map { responseBody -> ResponseEntity.ok(responseBody)}
+    }
+
     // HairTypes
-    @GetMapping("/haritypes/{userId}")
+    @GetMapping("/hairtypes/{userId}")
     fun getHairType(@PathVariable userId: UUID): Mono<ResponseEntity<Any>> {
         return webClient.get()
             .uri("$backendURI/hairtypes/$userId")
@@ -189,7 +248,7 @@ class ApiGatewayController (
             .map { responseBody -> ResponseEntity.ok(responseBody)}
     }
 
-        // Auth
+    // Auth
     @PostMapping("/auth/register")
     fun register(@RequestBody registerRequest: Map<String, Any>): Mono<ResponseEntity<String>> {
         return webClient.post()
@@ -204,8 +263,24 @@ class ApiGatewayController (
     fun login(@RequestBody loginRequest: Map<String, Any>): Mono<ResponseEntity<String>> {
         return webClient.post()
             .uri("$backendURI/auth/login")
+            .contentType(MediaType.APPLICATION_JSON)
+            .accept(MediaType.APPLICATION_JSON)
             .bodyValue(loginRequest)
             .retrieve()
+            .onStatus({ status -> status == HttpStatus.BAD_REQUEST }) { response ->
+                // ВАЖНО: получаем тело ошибки от backend
+                response.bodyToMono(String::class.java)
+                    .flatMap { errorBody ->
+                        println("=== BACKEND 400 ERROR DETAILS ===")
+                        println("Status: ${response.statusCode()}")
+                        println("Headers: ${response.headers()}")
+                        println("Body: $errorBody")
+                        println("=== END ERROR DETAILS ===")
+
+                        // Пробрасываем ошибку с деталями
+                        Mono.error(RuntimeException("Backend validation failed: $errorBody"))
+                    }
+            }
             .bodyToMono(String::class.java)
             .map { responseBody -> ResponseEntity.ok(responseBody) }
     }
@@ -219,7 +294,7 @@ class ApiGatewayController (
             .bodyToMono(String::class.java)
             .map { responseBody -> ResponseEntity.ok(responseBody) }
     }
-    
+
     // Consistence AI
     @PostMapping("/composition/analyze")
     fun analyzeConsistenceOfProduct(@RequestPart("file") file: FilePart): Mono<ResponseEntity<Map<String, Any>>> {
@@ -260,7 +335,6 @@ class ApiGatewayController (
                     )
                 }
             }
-
     }
 
     private fun rabbitMqPolling(): Mono<ResponseEntity<Map<String, Any>>> {
