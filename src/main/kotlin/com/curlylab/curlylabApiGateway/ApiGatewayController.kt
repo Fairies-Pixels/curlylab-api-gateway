@@ -295,7 +295,7 @@ class ApiGatewayController (
             .map { responseBody -> ResponseEntity.ok(responseBody) }
     }
 
-    // Consistence AI
+    // Composition AI
     @PostMapping("/composition/analyze")
     fun analyzeConsistenceOfProduct(@RequestPart("file") file: FilePart): Mono<ResponseEntity<Map<String, Any>>> {
         return file.content()
@@ -327,7 +327,7 @@ class ApiGatewayController (
                             request
                         )
 
-                        rabbitMqPolling()
+                        rabbitMqPolling("consistence.responses")
                     }
                 } catch (e: Exception) {
                     Mono.just(
@@ -337,12 +337,54 @@ class ApiGatewayController (
             }
     }
 
-    private fun rabbitMqPolling(): Mono<ResponseEntity<Map<String, Any>>> {
+    // Hair's porosity AI
+    @PostMapping("/analyze")
+    fun analyzeHairPorosity(@RequestPart("file") file: FilePart): Mono<ResponseEntity<Map<String, Any>>> {
+        return file.content()
+            .collectList()
+            .flatMap { dataBuffers ->
+                try {
+                    val bytes = DataBufferUtils.join(Flux.fromIterable(dataBuffers))
+                        .map { dataBuffer ->
+                            val bytes = ByteArray(dataBuffer.readableByteCount())
+                            dataBuffer.read(bytes)
+                            DataBufferUtils.release(dataBuffer)
+                            bytes
+                        }
+                    bytes.flatMap { imageBytes ->
+                        file.headers().contentType?.toString()?.startsWith("image/")?.let {
+                            if (!it == true) {
+                                return@flatMap Mono.just(
+                                    ResponseEntity.badRequest().body(mapOf("error" to "File must be an image"))
+                                )
+                            }
+                        }
+
+                        val base64Image = Base64.getEncoder().encodeToString(imageBytes)
+                        val request = HairTypeRequest(file = base64Image)
+
+                        rabbitTemplate.convertAndSend(
+                            "hairType.exchange",
+                            "hairType.request.bind",
+                            request
+                        )
+
+                        rabbitMqPolling("hairType.responses")
+                    }
+                } catch (e: Exception) {
+                    Mono.just(
+                        ResponseEntity.status(500).body(mapOf("error" to "Failed to process image: ${e.message}"))
+                    )
+                }
+            }
+    }
+
+    private fun rabbitMqPolling(responseQueueName: String): Mono<ResponseEntity<Map<String, Any>>> {
         return Flux.interval(Duration.ofMillis(500))
             .take(10)
             .flatMap { attempt ->
                 Mono.fromCallable {
-                    rabbitTemplate.receive("consistence.responses")
+                    rabbitTemplate.receive(responseQueueName)
                 }.map { message ->
                     message to attempt
                 }
@@ -360,7 +402,7 @@ class ApiGatewayController (
                     )
                 } else {
                     Mono.delay(Duration.ofMillis(500))
-                        .then(rabbitMqPolling())
+                        .then(rabbitMqPolling(responseQueueName))
                 }
             }
             .timeout(Duration.ofSeconds(5))
