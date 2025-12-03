@@ -1,9 +1,11 @@
 package com.curlylab.curlylabApiGateway
 
-import com.fasterxml.jackson.databind.ObjectMapper
 import org.springframework.amqp.rabbit.core.RabbitTemplate
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.core.io.buffer.DataBufferUtils
+import org.springframework.http.HttpEntity
+import org.springframework.http.HttpHeaders
+import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.http.codec.multipart.FilePart
 import org.springframework.web.bind.annotation.*
@@ -74,6 +76,51 @@ class ApiGatewayController (
     fun deleteUser(@PathVariable id: UUID): Mono<ResponseEntity<String>> {
         return webClient.delete()
             .uri("$backendURI/users/$id")
+            .retrieve()
+            .bodyToMono(String::class.java)
+            .map { responseBody -> ResponseEntity.ok(responseBody)}
+    }
+
+    @PostMapping(value = ["/users/{id}/upload_image"], consumes = [MediaType.ALL_VALUE])
+    fun uploadUserAvatar(@PathVariable id: UUID, @RequestPart("file") avatar: FilePart): Mono<ResponseEntity<String>> {
+        println("upload_image")
+        return DataBufferUtils.join(avatar.content())
+            .flatMap { dataBuffer ->
+                val bytes = ByteArray(dataBuffer.readableByteCount())
+                dataBuffer.read(bytes)
+
+                val boundary = "----WebKitFormBoundary" + System.currentTimeMillis()
+
+                val body = StringBuilder()
+                    .append("--").append(boundary).append("\r\n")
+                    .append("Content-Disposition: form-data; name=\"file\"; filename=\"")
+                    .append(avatar.filename()).append("\"\r\n")
+                    .append("Content-Type: ")
+                    .append(avatar.headers().contentType?.toString() ?: "image/png")
+                    .append("\r\n\r\n")
+                    .toString().toByteArray() + bytes +
+                        "\r\n--${boundary}--\r\n".toByteArray()
+
+                val headers = HttpHeaders().apply {
+                    contentType = MediaType.parseMediaType("multipart/form-data; boundary=$boundary")
+                }
+
+                val entity = HttpEntity(body, headers)
+
+                webClient.post()
+                    .uri("$backendURI/users/$id/upload_image")
+                    .header(HttpHeaders.CONTENT_TYPE, "multipart/form-data; boundary=$boundary")
+                    .bodyValue(body)
+                    .retrieve()
+                    .bodyToMono(String::class.java)
+                    .map { ResponseEntity.ok(it) }
+            }
+    }
+
+    @DeleteMapping("/users/{id}/avatar")
+    fun deleteUserAvatar(@PathVariable id: UUID): Mono<ResponseEntity<String>> {
+        return webClient.delete()
+            .uri("$backendURI/users/$id/avatar")
             .retrieve()
             .bodyToMono(String::class.java)
             .map { responseBody -> ResponseEntity.ok(responseBody)}
