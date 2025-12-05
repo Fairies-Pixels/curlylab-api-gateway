@@ -304,10 +304,6 @@ class ApiGatewayController (
         return Mono.defer {
            val hasFile = file != null
            var hasText = text != null
-            println(file)
-            println(hasFile)
-            println(text)
-            println(hasText)
 
             when {
                 (hasFile && hasText) || !(hasFile || hasText) -> {
