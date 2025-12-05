@@ -297,44 +297,80 @@ class ApiGatewayController (
 
     // Composition AI
     @PostMapping("/composition/analyze")
-    fun analyzeConsistenceOfProduct(@RequestPart("file") file: FilePart): Mono<ResponseEntity<Map<String, Any>>> {
-        return file.content()
-            .collectList()
-            .flatMap { dataBuffers ->
-                try {
-                    val bytes = DataBufferUtils.join(Flux.fromIterable(dataBuffers))
-                        .map { dataBuffer ->
-                            val bytes = ByteArray(dataBuffer.readableByteCount())
-                            dataBuffer.read(bytes)
-                            DataBufferUtils.release(dataBuffer)
-                            bytes
-                        }
-                    bytes.flatMap { imageBytes ->
-                        file.headers().contentType?.toString()?.startsWith("image/")?.let {
-                            if (!it == true) {
-                                return@flatMap Mono.just(
-                                    ResponseEntity.badRequest().body(mapOf("error" to "File must be an image"))
+    fun analyzeConsistenceOfProduct(
+        @RequestPart(value = "file", required = false) file: FilePart?,
+        @RequestPart(value = "text", required = false) text: Mono<String>?
+    ): Mono<ResponseEntity<Map<String, Any>>> {
+        return Mono.defer {
+           val hasFile = file != null
+           val hasText = text != null
+
+            when {
+                (hasFile && hasText) || !(hasFile || hasText)-> {
+                    return@defer Mono.just(
+                        ResponseEntity.badRequest().body(
+                            mapOf("error" to "Provide either file or text.")
+                        )
+                    )
+                }
+                hasFile -> {
+                    return@defer file!!.content()
+                        .collectList()
+                        .flatMap { dataBuffers ->
+                            try {
+                                val bytes = DataBufferUtils.join(Flux.fromIterable(dataBuffers))
+                                    .map { dataBuffer ->
+                                        val bytes = ByteArray(dataBuffer.readableByteCount())
+                                        dataBuffer.read(bytes)
+                                        DataBufferUtils.release(dataBuffer)
+                                        bytes
+                                    }
+                                bytes.flatMap { imageBytes ->
+                                    file.headers().contentType?.toString()?.startsWith("image/")?.let {
+                                        if (!it == true) {
+                                            return@flatMap Mono.just(
+                                                ResponseEntity.badRequest().body(mapOf("error" to "File must be an image"))
+                                            )
+                                        }
+                                    }
+
+                                    val base64Image = Base64.getEncoder().encodeToString(imageBytes)
+                                    val request = HairTypeRequest(file = base64Image)
+
+                                    rabbitTemplate.convertAndSend(
+                                        "consistence.exchange",
+                                        "consistence.request.bind",
+                                        request
+                                    )
+
+                                    rabbitMqPolling("consistence.responses")
+                                }
+                            } catch (e: Exception) {
+                                Mono.just(
+                                    ResponseEntity.status(500).body(mapOf("error" to "Failed to process image: ${e.message}"))
                                 )
                             }
                         }
-
-                        val base64Image = Base64.getEncoder().encodeToString(imageBytes)
-                        val request = HairTypeRequest(file = base64Image)
-
-                        rabbitTemplate.convertAndSend(
-                            "consistence.exchange",
-                            "consistence.request.bind",
-                            request
-                        )
-
-                        rabbitMqPolling("consistence.responses")
+                }
+                else -> {
+                    return@defer text!!.flatMap {
+                        textContent -> try {
+                            val request = HairTypeRequest(text = textContent)
+                            rabbitTemplate.convertAndSend(
+                                "consistence.exchange",
+                                "consistence.request.bind",
+                                request
+                            )
+                            rabbitMqPolling("consistence.responses")
+                        } catch (e: Exception) {
+                            Mono.just(
+                                ResponseEntity.status(500).body(mapOf("error" to "Failed to process image: ${e.message}"))
+                            )
+                        }
                     }
-                } catch (e: Exception) {
-                    Mono.just(
-                        ResponseEntity.status(500).body(mapOf("error" to "Failed to process image: ${e.message}"))
-                    )
                 }
             }
+        }
     }
 
     // Hair's porosity AI
