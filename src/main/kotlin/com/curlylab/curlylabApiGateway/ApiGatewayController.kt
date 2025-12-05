@@ -299,14 +299,14 @@ class ApiGatewayController (
     @PostMapping("/composition/analyze")
     fun analyzeConsistenceOfProduct(
         @RequestPart(value = "file", required = false) file: FilePart?,
-        @RequestPart(value = "text", required = false) text: Mono<String>?
+        @RequestPart(value = "text", required = false) text: String?
     ): Mono<ResponseEntity<Map<String, Any>>> {
         return Mono.defer {
            val hasFile = file != null
-           val hasText = text != null
+           var hasText = text != null
 
             when {
-                (hasFile && hasText) || !(hasFile || hasText)-> {
+                (hasFile && hasText) || !(hasFile || hasText) -> {
                     return@defer Mono.just(
                         ResponseEntity.badRequest().body(
                             mapOf("error" to "Provide either file or text.")
@@ -353,9 +353,8 @@ class ApiGatewayController (
                         }
                 }
                 else -> {
-                    return@defer text!!.flatMap {
-                        textContent -> try {
-                            val request = HairTypeRequest(text = textContent)
+                       return@defer try {
+                            val request = HairTypeRequest(text = text)
                             rabbitTemplate.convertAndSend(
                                 "consistence.exchange",
                                 "consistence.request.bind",
@@ -368,7 +367,6 @@ class ApiGatewayController (
                             )
                         }
                     }
-                }
             }
         }
     }
