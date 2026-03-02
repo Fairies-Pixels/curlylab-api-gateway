@@ -3,15 +3,20 @@ plugins {
 	kotlin("plugin.spring") version "1.9.22"
 	id("org.springframework.boot") version "3.4.5"
 	id("io.spring.dependency-management") version "1.1.4"
+    id("jacoco")
 }
 
-group = "aps.backflip"
+group = "com.curlylab"
 version = "0.0.1-SNAPSHOT"
 
 java {
 	toolchain {
 		languageVersion.set(JavaLanguageVersion.of(17))
 	}
+}
+
+jacoco {
+    toolVersion = "0.8.11"
 }
 
 repositories {
@@ -41,6 +46,11 @@ dependencies {
 	testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
 	testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test")
 	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+
+    testImplementation("io.mockk:mockk:1.13.17")
+    testImplementation("org.junit.jupiter:junit-jupiter-api")
+    testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine")
+    testImplementation("org.springframework.boot:spring-boot-starter-webflux")
 }
 
 dependencyManagement {
@@ -57,4 +67,21 @@ kotlin {
 
 tasks.withType<Test> {
 	useJUnitPlatform()
+    finalizedBy(tasks.jacocoTestReport)
+}
+
+tasks.jacocoTestReport {
+    dependsOn(tasks.test)
+    reports {
+        xml.required.set(false)
+        csv.required.set(false)
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir("jacocoHtml"))
+    }
+
+    classDirectories.setFrom(
+        sourceSets.main.get().output.asFileTree.matching {
+            exclude("**/config/**")
+        }
+    )
 }

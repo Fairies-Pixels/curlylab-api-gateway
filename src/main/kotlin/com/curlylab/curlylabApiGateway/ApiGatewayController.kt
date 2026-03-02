@@ -31,7 +31,7 @@ class ApiGatewayController (
     @Autowired
     val rabbitTemplate: RabbitTemplate,
     val webClient: WebClient,
-    @Value("\${backend.uri:http://curlylab-backend-service:8080}")
+    @Value("\${backend.uri:http://localhost:8080}")
     private val backendURI: String
 ) {
     // Products
