@@ -8,9 +8,6 @@ import org.springframework.boot.test.web.server.LocalServerPort
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
 import org.springframework.test.web.reactive.server.WebTestClient
-import org.testcontainers.containers.PostgreSQLContainer
-import org.testcontainers.containers.RabbitMQContainer
-import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import java.util.*
 
@@ -40,7 +37,6 @@ class FavouriteIntegrationTest {
 
     @BeforeEach
     fun setUp() {
-        // Здесь можно добавить очистку данных если нужно
         webTestClient = WebTestClient.bindToServer()
             .baseUrl("http://localhost:$port")
             .build()
@@ -48,14 +44,11 @@ class FavouriteIntegrationTest {
 
     @Test
     fun `should add product to favourites and verify it appears in list`() {
-        // Given
         val userId = UUID.randomUUID()
         val productId = "a0997b2e-d322-487e-b99f-b23f4033ae5a"// Из имеющейся базы
 
-        // Сначала создадим пользователя и продукт в бэкенде
         createTestUser(userId)
 
-        // When - добавляем продукт в избранное
         val addFavouriteResponse = webTestClient.post()
             .uri("/users/$userId/favourites")
             .bodyValue(mapOf(
@@ -67,10 +60,8 @@ class FavouriteIntegrationTest {
             .returnResult()
             .responseBody
 
-        // Then - проверяем, что продукт добавился
         assert(addFavouriteResponse == "Favourite product has added!")
 
-        // When - получаем список избранного
         val favouritesList = webTestClient.get()
             .uri("/users/$userId/favourites")
             .exchange()
@@ -79,7 +70,6 @@ class FavouriteIntegrationTest {
             .returnResult()
             .responseBody
 
-        // Then - проверяем, что продукт есть в списке
         assert(favouritesList != null)
 
         @Suppress("UNCHECKED_CAST")
@@ -91,7 +81,6 @@ class FavouriteIntegrationTest {
     }
 
     private fun createTestUser(userId: UUID) {
-        // Вызов бэкенда для создания тестового пользователя
         webTestClient.post()
             .uri("/users")
             .bodyValue(mapOf(
