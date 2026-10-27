@@ -285,6 +285,32 @@ class ApiGatewayController (
             .map { responseBody -> ResponseEntity.ok(responseBody) }
     }
 
+    @PostMapping("/auth/logout")
+    fun logout(@RequestBody logoutRequest: String): Mono<ResponseEntity<String>> {
+        return webClient.post()
+            .uri("$backendURI/auth/logout")
+            .contentType(MediaType.APPLICATION_JSON)
+            .accept(MediaType.APPLICATION_JSON)
+            .bodyValue(logoutRequest)
+            .retrieve()
+            .onStatus({ status -> status == HttpStatus.BAD_REQUEST }) { response ->
+                // ВАЖНО: получаем тело ошибки от backend
+                response.bodyToMono(String::class.java)
+                    .flatMap { errorBody ->
+                        println("=== BACKEND 400 ERROR DETAILS ===")
+                        println("Status: ${response.statusCode()}")
+                        println("Headers: ${response.headers()}")
+                        println("Body: $errorBody")
+                        println("=== END ERROR DETAILS ===")
+
+                        // Пробрасываем ошибку с деталями
+                        Mono.error(RuntimeException("Backend validation failed: $errorBody"))
+                    }
+            }
+            .bodyToMono(String::class.java)
+            .map { responseBody -> ResponseEntity.ok(responseBody) }
+    }
+
     @PostMapping("/auth/google")
     fun google(@RequestBody googleRequest: Map<String, Any>): Mono<ResponseEntity<String>> {
         return webClient.post()
